@@ -1,0 +1,670 @@
+---
+title: "Returns to Education in South Africa"
+subtitle: "Empirical evidence from QLFS and LMDSA 2023"
+author: "Econometrics portfolio case study"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 10,
+  fig.height = 6
+)
+
+library(readr)
+library(dplyr)
+library(knitr)
+library(stringr)
+library(scales)
+
+# ------------------------------------------------------------------
+# Paths
+# ------------------------------------------------------------------
+
+project_root <- Sys.getenv("PROJECT_ROOT", unset = normalizePath(".", winslash = "/", mustWork = TRUE))
+
+eda_tables_dir <- file.path(project_root, "eda/tables")
+eda_figures_dir <- file.path(project_root, "eda/figures")
+model_tables_dir <- file.path(project_root, "report/tables")
+model_figures_dir <- file.path(project_root, "report/figures")
+
+# ------------------------------------------------------------------
+# Helper functions
+# ------------------------------------------------------------------
+
+read_required_csv <- function(path) {
+  if (!file.exists(path)) {
+    stop(paste("Required file not found:", path), call. = FALSE)
+  }
+  read_csv(
+    normalizePath(path, winslash = "/", mustWork = TRUE),
+    show_col_types = FALSE
+  )
+}
+
+include_required_graphic <- function(path) {
+  if (!file.exists(path)) {
+    stop(paste("Required figure not found:", path), call. = FALSE)
+  }
+  knitr::include_graphics(
+    normalizePath(path, winslash = "/", mustWork = TRUE),
+    rel_path = FALSE
+  )
+}
+
+fmt_pct <- function(x, digits = 1) {
+  paste0(round(x, digits), "%")
+}
+
+fmt_rand <- function(x) {
+  paste0("R", format(round(x, 0), big.mark = ",", scientific = FALSE))
+}
+
+get_value <- function(df, group, column) {
+  df %>%
+    filter(as.character(education_group) == group) %>%
+    pull({{ column }}) %>%
+    .[1]
+}
+
+# ------------------------------------------------------------------
+# Load report-ready tables
+# ------------------------------------------------------------------
+
+education_premium <- read_required_csv(
+  file.path(eda_tables_dir, "20b_education_premium_summary_report_ready.csv")
+)
+
+population_wage_premium <- read_required_csv(
+  file.path(eda_tables_dir, "21b_population_wage_premium_summary_report_ready.csv")
+)
+
+credential_jumps <- read_required_csv(
+  file.path(eda_tables_dir, "22b_credential_jump_summary_report_ready.csv")
+)
+
+wage_model_effects <- read_required_csv(
+  file.path(model_tables_dir, "05_final_wage_model_education_effects.csv")
+)
+
+employment_model_effects <- read_required_csv(
+  file.path(model_tables_dir, "06_final_employment_model_education_effects.csv")
+)
+
+# ------------------------------------------------------------------
+# Useful inline values
+# ------------------------------------------------------------------
+
+emp_incomplete <- get_value(education_premium, "Incomplete secondary", employment_rate_pct)
+emp_matric <- get_value(education_premium, "Matric", employment_rate_pct)
+emp_cert <- get_value(education_premium, "Certificate/diploma", employment_rate_pct)
+emp_degree <- get_value(education_premium, "Degree/postgrad", employment_rate_pct)
+
+wage_incomplete <- get_value(education_premium, "Incomplete secondary", median_wage)
+wage_matric <- get_value(education_premium, "Matric", median_wage)
+wage_cert <- get_value(education_premium, "Certificate/diploma", median_wage)
+wage_degree <- get_value(education_premium, "Degree/postgrad", median_wage)
+
+wage_model_matric <- wage_model_effects %>%
+  filter(education_group == "Matric") %>%
+  pull(wage_premium_pct)
+
+wage_model_cert <- wage_model_effects %>%
+  filter(education_group == "Certificate/diploma") %>%
+  pull(wage_premium_pct)
+
+wage_model_degree <- wage_model_effects %>%
+  filter(education_group == "Degree/postgrad") %>%
+  pull(wage_premium_pct)
+
+emp_model_matric <- employment_model_effects %>%
+  filter(education_group == "Matric") %>%
+  pull(employment_association_pp)
+
+emp_model_cert <- employment_model_effects %>%
+  filter(education_group == "Certificate/diploma") %>%
+  pull(employment_association_pp)
+
+emp_model_degree <- employment_model_effects %>%
+  filter(education_group == "Degree/postgrad") %>%
+  pull(employment_association_pp)
+```
+
+```{css, echo=FALSE}
+body {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+h1, h2, h3 {
+  font-weight: 650;
+}
+
+.mainbox {
+  background-color: #f7f9fb;
+  border-left: 5px solid #2c3e50;
+  padding: 1em 1.2em;
+  margin: 1.2em 0;
+}
+
+.note {
+  background-color: #fff8e5;
+  border-left: 5px solid #e0a800;
+  padding: 1em 1.2em;
+  margin: 1.2em 0;
+}
+
+.small {
+  font-size: 0.9em;
+  color: #555;
+}
+
+.caption {
+  font-size: 0.9em;
+  color: #555;
+  margin-top: -0.5em;
+  margin-bottom: 1.5em;
+}
+
+table {
+  font-size: 0.92em;
+}
+```
+
+# Executive summary
+
+This report examines the association between education and labour-market outcomes in South Africa using Statistics South Africa's 2023 labour-market microdata. The analysis focuses on two outcomes: employment and employee wages. Employment-side outcomes are analysed using the Quarterly Labour Force Survey (QLFS) 2023, while wage-side outcomes are analysed using Labour Market Dynamics in South Africa (LMDSA) 2023.
+
+<div class="mainbox">
+<strong>Main finding.</strong> Education is strongly associated with better labour-market outcomes, but the pattern is highly non-linear. Employment and wages rise modestly at lower levels of schooling, increase at matric, and rise sharply for post-school qualifications. This suggests that returns to education in South Africa are not simply returns to years of schooling. They are closely tied to credential thresholds, access to tertiary education, spatial inequality, and broader labour-market segmentation.
+</div>
+
+The descriptive evidence shows that, among adults aged 25--64, employment rises from `r fmt_pct(emp_incomplete)` for those with incomplete secondary education to `r fmt_pct(emp_matric)` for matric, `r fmt_pct(emp_cert)` for certificate/diploma, and `r fmt_pct(emp_degree)` for degree/postgraduate education. Median monthly employee wages rise from `r fmt_rand(wage_incomplete)` for incomplete secondary education to `r fmt_rand(wage_matric)` for matric, `r fmt_rand(wage_cert)` for certificate/diploma, and `r fmt_rand(wage_degree)` for degree/postgraduate education.
+
+Regression models confirm the same pattern. In the preferred wage model, after controlling for experience, gender, population group, province, geography, occupation, industry, sector, and hours worked, matric is associated with a wage premium of `r fmt_pct(wage_model_matric)`, certificate/diploma with `r fmt_pct(wage_model_cert)`, and degree/postgraduate education with `r fmt_pct(wage_model_degree)`, relative to incomplete secondary education.
+
+# Data and sample construction
+
+## Data sources
+
+The empirical analysis uses two Statistics South Africa datasets from 2023.
+
+First, the **Quarterly Labour Force Survey (QLFS) 2023** is used to analyse employment outcomes. The QLFS is appropriate for this part of the analysis because it contains rich labour-market information, including employment status, unemployment status, demographics, education, province, geography type, occupation, industry, sector, and survey weights.
+
+Second, **Labour Market Dynamics in South Africa (LMDSA) 2023** is used to analyse wage outcomes. LMDSA is the preferred wage dataset because it pools the four QLFS quarters into an annual labour-market file and contains earnings variables. This matters because the public quarterly QLFS files used here do not contain the clean wage variables required for a Mincer-style wage regression.
+
+The use of two datasets is therefore intentional. QLFS is used for the employment channel, while LMDSA is used for the wage channel.
+
+## Unit of observation and identifiers
+
+Both datasets are person-level datasets. Individuals are nested within households. In the cleaned data, a person identifier was constructed using the household identifier and person number. Long ID variables were imported as character strings rather than numeric values to avoid precision loss.
+
+## Education variable
+
+The analysis uses highest completed education. The main education variable is grouped into seven categories:
+
+```{r education-groups-table}
+education_groups <- tibble::tibble(
+  Category = c(
+    "No schooling",
+    "Less than primary",
+    "Primary",
+    "Incomplete secondary",
+    "Matric",
+    "Certificate/diploma",
+    "Degree/postgrad"
+  ),
+  Interpretation = c(
+    "No completed formal schooling",
+    "Some schooling below completed primary",
+    "Completed primary education",
+    "Some secondary education but no matric",
+    "Completed matric / Grade 12",
+    "Post-school certificate or diploma",
+    "Bachelor's degree or postgraduate qualification"
+  )
+)
+
+kable(
+  education_groups,
+  caption = "Education categories used in the empirical analysis."
+)
+```
+
+Using education categories rather than only approximate years of schooling is important for this project. South African qualifications do not map neatly into a linear years-of-schooling scale, and the essay question explicitly concerns the distinction between education quantity and education quality. Education categories allow the analysis to detect non-linear credential effects, especially around matric and tertiary education.
+
+## Wage sample
+
+The wage analysis uses LMDSA 2023 and restricts the sample to employees aged 25--64 with positive monthly employee earnings, plausible working hours, and valid education data. The main wage variable is monthly employee earnings. Self-employed earnings are excluded from the main wage regression because employee wages and self-employed earnings are conceptually different: employee wages are reported before deductions, while self-employed earnings are measured after expenses.
+
+To reduce the influence of implausible wage reports and extreme outliers, the preferred wage sample uses a trimmed earnings range. The wage analysis therefore focuses on employees with monthly wages between R500 and R300,000 and weekly hours between 10 and 84.
+
+## Employment sample
+
+The employment analysis uses QLFS 2023 and restricts the main sample to adults aged 25--64 with valid education and employment-status information. The 25--64 restriction aligns the employment analysis more closely with the wage analysis and reduces distortion from students and school-to-work transitions among younger individuals.
+
+# Methodology
+
+## Wage model
+
+The wage analysis is based on a Mincer-style log-wage equation:
+
+$$
+\log(wage_i) =
+\beta_0 +
+\beta_1 Education_i +
+\beta_2 Experience_i +
+\beta_3 Experience_i^2 +
+X_i'\gamma +
+\epsilon_i.
+$$
+
+Here, $Education_i$ is a set of education-category indicators rather than a single years-of-schooling variable. The reference category is **incomplete secondary education**. This means that all education coefficients should be interpreted relative to individuals with incomplete secondary schooling.
+
+The preferred wage model is estimated using survey-weighted regression and includes controls for:
+
+- potential experience and its square,
+- gender,
+- population group,
+- province,
+- geography type,
+- occupation,
+- industry,
+- sector,
+- hours worked.
+
+The model sequence is:
+
+```{r wage-model-sequence}
+wage_model_sequence <- tibble::tibble(
+  Model = c("W1", "W2", "W3", "W4"),
+  Controls = c(
+    "Education + potential experience",
+    "W1 + gender + population group",
+    "W2 + province + geography type",
+    "W3 + occupation + industry + sector + hours worked"
+  ),
+  Interpretation = c(
+    "Broad education-wage association",
+    "Adjusts for demographic composition",
+    "Adjusts for spatial/geographic inequality",
+    "Adjusts for job sorting across occupations, industries, and sectors"
+  )
+)
+
+kable(
+  wage_model_sequence,
+  caption = "Wage model sequence."
+)
+```
+
+The final model should be interpreted as an adjusted association rather than a causal estimate. The controls reduce omitted-variable concerns, but they do not eliminate ability bias, family-background bias, measurement error in education, or selection into employment.
+
+## Employment model
+
+The employment analysis uses a survey-weighted linear probability model:
+
+$$
+Employed_i =
+\alpha_0 +
+\alpha_1 Education_i +
+X_i'\delta +
+u_i.
+$$
+
+As in the wage model, the education reference category is incomplete secondary education. Coefficients can be interpreted as percentage-point differences in employment probability relative to incomplete secondary schooling.
+
+The final employment model controls for:
+
+- age and age squared,
+- gender,
+- population group,
+- province,
+- geography type.
+
+# Descriptive evidence
+
+## Employment rises sharply at credential thresholds
+
+```{r employment-rate-figure, fig.cap="Weighted employment rate by education level among adults aged 25--64 in QLFS 2023."}
+include_required_graphic(
+  file.path(eda_figures_dir, "05b_qlfs_employment_rate_by_education_age25_64.png")
+)
+```
+
+The employment gradient is clear. Among adults aged 25--64, employment is `r fmt_pct(emp_incomplete)` for individuals with incomplete secondary education, compared with `r fmt_pct(emp_matric)` for matric, `r fmt_pct(emp_cert)` for certificate/diploma, and `r fmt_pct(emp_degree)` for degree/postgraduate education.
+
+The increase is not smooth across all schooling levels. The largest gains appear at matric and especially at tertiary education. This suggests that the labour market rewards completed credentials more than marginal increases in low or intermediate schooling.
+
+The employment gradient also reflects changes in the composition of labour-market status, not only employment itself.
+
+```{r labour-status-adult-figure, fig.cap="Labour-market status by education level among adults aged 25--64 in QLFS 2023."}
+include_required_graphic(
+  file.path(eda_figures_dir, "07b_qlfs_labour_status_by_education_age25_64.png")
+)
+```
+
+The share employed rises sharply with education, while the shares unemployed, discouraged, and outside the labour force generally decline. This matters because the return to education in South Africa is partly an employment-access return, not only a wage return.
+
+## Education and job quality
+
+Employment is only one dimension of labour-market returns. Education is also associated with better job quality, including access to formal-sector employment.
+
+```{r formal-sector-figure, fig.cap="Formal-sector share among employed workers by education level in QLFS 2023."}
+include_required_graphic(
+  file.path(eda_figures_dir, "11_qlfs_formal_sector_share_by_education.png")
+)
+```
+
+The formal-sector share rises with education. This suggests that education affects the type of employment obtained, not only the probability of being employed. This is consistent with the wage regression result that education premiums fall when occupation, industry, sector, and hours are added as controls: part of the return to education operates through sorting into better jobs.
+
+## Median wages show even stronger non-linearity
+
+```{r median-wage-figure, fig.cap="Weighted median monthly employee wage by education level in the trimmed LMDSA wage sample."}
+include_required_graphic(
+  file.path(eda_figures_dir, "12_lmdsa_median_wage_by_education.png")
+)
+```
+
+The wage gradient is more dramatic than the employment gradient. Median monthly wages rise from `r fmt_rand(wage_incomplete)` for incomplete secondary education to `r fmt_rand(wage_matric)` for matric, `r fmt_rand(wage_cert)` for certificate/diploma, and `r fmt_rand(wage_degree)` for degree/postgraduate education.
+
+This provides strong descriptive evidence of non-linear returns. Low and intermediate schooling levels have relatively weak wage differences, while post-school credentials are associated with very large wage gains.
+
+The median wage pattern is not only driven by a few high earners. The log-wage distribution shifts upward across education levels.
+
+```{r log-wage-boxplot-figure, fig.cap="Log monthly wage distribution by education level in the trimmed LMDSA wage sample."}
+include_required_graphic(
+  file.path(eda_figures_dir, "14_lmdsa_log_wage_boxplot_by_education.png")
+)
+```
+
+The distributional evidence shows that tertiary-educated workers are not merely represented by a few high-wage outliers. The entire wage distribution is shifted upward for certificate/diploma and degree/postgraduate workers.
+
+## Combined descriptive premium table
+
+```{r combined-premium-table}
+education_premium_display <- education_premium %>%
+  select(
+    education_group,
+    qlfs_n,
+    lmdsa_wage_n,
+    employment_rate_pct,
+    official_unemployment_rate_pct,
+    median_wage,
+    median_wage_ratio_to_incomplete_secondary
+  ) %>%
+  rename(
+    `Education group` = education_group,
+    `QLFS n` = qlfs_n,
+    `LMDSA wage n` = lmdsa_wage_n,
+    `Employment rate (%)` = employment_rate_pct,
+    `Official unemployment rate (%)` = official_unemployment_rate_pct,
+    `Median wage (R)` = median_wage,
+    `Median wage ratio` = median_wage_ratio_to_incomplete_secondary
+  )
+
+kable(
+  education_premium_display,
+  caption = "Employment and wage outcomes by education group. Wage ratios are relative to incomplete secondary education."
+)
+```
+
+This table reinforces the central descriptive result: matric improves both employment and wages, but certificate/diploma and degree/postgraduate education are associated with much larger gains.
+
+## Credential thresholds: where the largest jumps occur
+
+The table below summarises the largest jumps in employment and wages across key credential thresholds.
+
+```{r credential-jump-table}
+credential_jump_display <- credential_jumps %>%
+  transmute(
+    `Employment jump: matric vs incomplete secondary (p.p.)` =
+      employment_jump_matric_vs_incomplete_secondary_pp,
+    `Employment jump: certificate/diploma vs matric (p.p.)` =
+      employment_jump_certificate_vs_matric_pp,
+    `Employment jump: degree/postgrad vs matric (p.p.)` =
+      employment_jump_degree_vs_matric_pp,
+    `Wage jump: matric vs incomplete secondary (R)` =
+      wage_jump_matric_vs_incomplete_secondary,
+    `Wage jump: certificate/diploma vs matric (R)` =
+      wage_jump_certificate_vs_matric,
+    `Wage jump: degree/postgrad vs matric (R)` =
+      wage_jump_degree_vs_matric,
+    `Wage ratio: matric vs incomplete secondary` =
+      wage_ratio_matric_vs_incomplete_secondary,
+    `Wage ratio: certificate/diploma vs matric` =
+      wage_ratio_certificate_vs_matric,
+    `Wage ratio: degree/postgrad vs matric` =
+      wage_ratio_degree_vs_matric
+  )
+
+kable(
+  credential_jump_display,
+  caption = "Credential jumps in employment and median wages."
+)
+```
+
+The jump from incomplete secondary to matric is meaningful, but the largest wage increases occur after matric. Certificate/diploma holders earn almost three times the median wage of matric holders, while degree/postgraduate workers earn more than four times the median wage of matric holders. This strengthens the argument that returns are credential-based and non-linear.
+
+## Education access differs across structural groups
+
+```{r tertiary-share-figure, fig.cap="Weighted tertiary education share by geography type and population group. Cells with fewer than 500 unweighted observations are excluded."}
+include_required_graphic(
+  file.path(eda_figures_dir, "19b_qlfs_tertiary_share_by_geo_population_n500.png")
+)
+```
+
+The quality--quantity distinction is difficult to measure directly because the datasets do not contain test scores, school resources, former education department, or direct school-quality indicators. However, geography type and population group provide imperfect proxies for historically structured differences in access to high-return educational pathways.
+
+The figure shows that tertiary education shares are much higher in urban areas and vary strongly across population groups. This suggests that access to high-return education is unevenly distributed. Consequently, the same number of years of schooling may not represent the same quality of education or the same labour-market opportunity.
+
+## Wage differences remain within education categories
+
+```{r wage-population-figure, fig.cap="Weighted median monthly employee wage by education and population group. Cells with at least 100 unweighted observations are shown."}
+include_required_graphic(
+  file.path(eda_figures_dir, "15_lmdsa_median_wage_by_education_population.png")
+)
+```
+
+This figure shows that education is associated with higher wages within each population group, but also that the same broad education category is not rewarded equally across groups. For example, the median wage among workers with matric is substantially higher for White and Indian/Asian workers than for Black African and Coloured workers.
+
+This pattern does not imply that population group itself is the causal mechanism. Rather, population-group differences are interpreted as reflecting historically structured differences in school quality, location, access to networks, institution type, field of study, occupation sorting, and labour-market opportunity.
+
+```{r population-wage-table}
+population_wage_display <- population_wage_premium %>%
+  filter(education_group %in% c(
+    "Incomplete secondary",
+    "Matric",
+    "Certificate/diploma",
+    "Degree/postgrad"
+  )) %>%
+  select(
+    population_group,
+    education_group,
+    n,
+    median_wage,
+    p25_wage,
+    p75_wage,
+    median_wage_ratio_to_incomplete_secondary
+  ) %>%
+  rename(
+    `Population group` = population_group,
+    `Education group` = education_group,
+    `n` = n,
+    `Median wage (R)` = median_wage,
+    `25th percentile (R)` = p25_wage,
+    `75th percentile (R)` = p75_wage,
+    `Median wage ratio` = median_wage_ratio_to_incomplete_secondary
+  )
+
+kable(
+  population_wage_display,
+  caption = "Median wages by education and population group. Ratios are relative to incomplete secondary within each population group."
+)
+```
+
+# Regression evidence
+
+## Wage models
+
+```{r wage-model-figure, fig.cap="Estimated wage premiums by education level relative to incomplete secondary education."}
+include_required_graphic(
+  file.path(model_figures_dir, "01_wage_education_effects_all_models.png")
+)
+```
+
+The wage regressions confirm the descriptive evidence. In the simplest model, education premiums are very large. These premiums shrink after adding population group, province, geography type, and job controls, showing that part of the raw education premium operates through access to better occupations, industries, sectors, and locations.
+
+However, the final model still shows large positive premiums for completed credentials.
+
+```{r wage-model-table}
+wage_model_display <- wage_model_effects %>%
+  rename(
+    `Education group` = education_group,
+    `Wage premium (%)` = wage_premium_pct,
+    `95% CI lower` = conf_low_pct,
+    `95% CI upper` = conf_high_pct,
+    `p-value` = p_value
+  )
+
+kable(
+  wage_model_display,
+  caption = "Final wage model education effects. Reference category: incomplete secondary education."
+)
+```
+
+In the preferred model, relative to incomplete secondary education, matric is associated with a wage premium of `r fmt_pct(wage_model_matric)`, certificate/diploma with `r fmt_pct(wage_model_cert)`, and degree/postgraduate education with `r fmt_pct(wage_model_degree)`. This remains true even after controlling for job characteristics.
+
+## Employment models
+
+```{r employment-model-figure, fig.cap="Estimated employment associations by education level relative to incomplete secondary education."}
+include_required_graphic(
+  file.path(model_figures_dir, "02_employment_education_effects_all_models.png")
+)
+```
+
+The employment regressions show a similar pattern. Education is associated not only with higher wages among employed workers, but also with a higher probability of employment.
+
+```{r employment-model-table}
+employment_model_display <- employment_model_effects %>%
+  rename(
+    `Education group` = education_group,
+    `Employment association (p.p.)` = employment_association_pp,
+    `95% CI lower` = conf_low_pp,
+    `95% CI upper` = conf_high_pp,
+    `p-value` = p_value
+  )
+
+kable(
+  employment_model_display,
+  caption = "Final employment model education effects. Reference category: incomplete secondary education."
+)
+```
+
+Relative to incomplete secondary education, matric is associated with a `r round(emp_model_matric, 1)` percentage-point higher probability of employment, certificate/diploma with `r round(emp_model_cert, 1)` percentage points, and degree/postgraduate education with `r round(emp_model_degree, 1)` percentage points.
+
+This is important in the South African context because education returns are not only about higher wages. For many individuals, one of the largest returns to education is access to employment itself.
+
+# Discussion: quality, quantity, and human capital interpretation
+
+The results support the broad human capital prediction that education is associated with better labour-market outcomes. More educated individuals are more likely to be employed and earn higher wages. However, the findings also complicate a simple human capital interpretation.
+
+First, the returns are highly non-linear. If education operated as a simple linear quantity of human capital, one might expect each additional level of schooling to produce relatively smooth increases in employment and wages. Instead, the evidence shows weak gains at lower schooling levels, a meaningful jump at matric, and very large gains for tertiary credentials.
+
+Second, the same broad education category does not guarantee the same labour-market outcome. Wage differences persist across population groups within the same education category. This suggests that education is embedded in a broader structure of inequality. School quality, institution type, geography, language, networks, occupation sorting, and discrimination may all affect how educational credentials are converted into labour-market outcomes.
+
+Third, the decline in wage premiums from the simple wage model to the job-controls model is informative. It suggests that part of the return to education operates through sorting into better occupations, industries, and sectors. In other words, education matters partly because it changes the type of job a person can access.
+
+<div class="note">
+<strong>Interpretation.</strong> The empirical evidence supports the claim that returns to education are high in South Africa, especially for tertiary education. But the evidence does not support a simple interpretation in which each additional year of schooling has the same value. Instead, returns are concentrated at credential thresholds and are shaped by unequal access to high-quality education and high-return labour-market pathways.
+</div>
+
+# Reconciliation with the returns-to-education literature
+
+The results are consistent with the broad international literature finding substantial private returns to education, especially in developing-country settings. Patrinos and Psacharopoulos (2025/2026) report that, across 182 estimates from 140 studies in 55 countries, IV estimates of returns to schooling average 9.7%, about 38% higher than OLS, and exceed OLS estimates in nearly 80% of cases. Their interpretation is that causal returns can be especially high for individuals whose schooling is expanded by policy variation, particularly in lower- and middle-income contexts.
+
+This report does not estimate causal IV returns. The regressions are survey-weighted associational models using cross-sectional labour-market data. Therefore, the estimates should not be read as directly comparable to the IV estimates in that literature. However, the South African evidence aligns with the broader conclusion that education is strongly rewarded in the labour market.
+
+There are three points of reconciliation.
+
+First, the wage and employment estimates show large returns at higher levels of education. In the preferred wage model, matric, certificate/diploma, and degree/postgraduate education remain strongly associated with higher wages relative to incomplete secondary education, even after demographic, spatial, and job controls. This is consistent with the view that education has substantial economic value.
+
+Second, the non-linear pattern is important. The strongest returns are not attached to every marginal increase in schooling, but to completed credentials, especially tertiary qualifications. This supports the idea of scarcity rents: when high-level skills are scarce, workers with tertiary credentials receive large wage premiums.
+
+Third, the results also support caution in interpreting OLS-style estimates. Patrinos and Psacharopoulos emphasise that IV and OLS can differ because of selection, measurement error, and local average treatment effects. In this report, education quality is imperfectly measured, and school quality differences may cause measurement error when education is represented only by years or broad credentials. This could attenuate estimated returns. At the same time, ability and family-background bias may push estimates upward. The empirical results should therefore be interpreted as strong conditional associations rather than causal effects.
+
+The South African evidence also sharpens the quality--quantity distinction. If one simply measures education as years of schooling, the analysis risks treating unequal schooling systems as equivalent. The results here suggest that the labour market rewards not only schooling quantity, but also credential completion, access to tertiary pathways, geography, and structural advantage. This is why the human capital interpretation is only partly sufficient: education matters, but the meaning and labour-market value of education depend on its quality and context.
+
+# Limitations
+
+This analysis has several important limitations.
+
+First, the estimates are associational rather than causal. Individuals with higher education may differ from others in ability, family background, school quality, networks, and location. These factors may also affect employment and wages.
+
+Second, wage regressions condition on being employed. This introduces selection into employment. The employment models partially address this by separately analysing the probability of employment, but the wage regressions still only observe wages for employed employees.
+
+Third, school quality is not directly observed. The analysis uses geography type and population group as structural proxies, but these cannot fully capture actual learning, school resources, teacher quality, language of instruction, or institution type.
+
+Fourth, education categories are broad. The category "certificate/diploma" includes a wide range of post-school qualifications, and "degree/postgrad" combines undergraduate and postgraduate qualifications. Returns may differ substantially within these groups.
+
+Finally, the results should be read as evidence about labour-market associations in 2023, not as definitive estimates of the causal return to education.
+
+# Conclusion
+
+The evidence shows strong positive returns to education in South Africa, but these returns are highly non-linear. Employment and wages rise especially at matric and tertiary credential thresholds. The largest gains are associated with certificate/diploma and degree/postgraduate education.
+
+The results support the broad human capital view that education improves labour-market outcomes. However, they complicate a simple version of that view. Education quantity alone is an imperfect proxy for productive skill. In South Africa, the labour-market value of education depends not only on years or credentials, but also on schooling quality, access to tertiary pathways, geography, historical inequality, and labour-market segmentation.
+
+This reconciles the empirical findings with the broader returns-to-education literature. High estimated returns are plausible, especially in a developing-country context where high-level skills are scarce. But the quality--quantity distinction means that the policy implication is not simply “more years of schooling.” The stronger implication is that returns depend on expanding access to high-quality schooling and high-return post-school pathways for groups historically excluded from them.
+
+# Appendix: reproducibility notes
+
+The analysis pipeline is organised as follows:
+
+```{r pipeline-table}
+pipeline <- tibble::tibble(
+  Script = c(
+    "00_explore_qlfs_2023.R",
+    "00_explore_lmdsa_2023.R",
+    "01_clean_qlfs_2023.R",
+    "02_clean_lmdsa_2023.R",
+    "03_eda.R",
+    "04_models.R",
+    "05_render_report.R"
+  ),
+  Purpose = c(
+    "Inspect QLFS structure and variables",
+    "Inspect LMDSA structure and wage variables",
+    "Clean and harmonise QLFS 2023",
+    "Clean LMDSA 2023 and construct wage sample",
+    "Generate descriptive tables and figures",
+    "Estimate survey-weighted wage and employment models",
+    "Render this report"
+  )
+)
+
+kable(pipeline, caption = "Project pipeline.")
+```
+
+The main processed datasets are:
+
+- `data/processed/qlfs_2023/qlfs_2023_clean.csv`
+- `data/processed/lmdsa_2023/lmdsa_2023_clean.csv`
+
+The main generated outputs are stored in:
+
+- `eda/tables/`
+- `eda/figures/`
+- `report/tables/`
+- `report/figures/`

@@ -47,3 +47,12 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Project-specific publishing exclusions
+data/raw/*
+!data/raw/README.md
+data/processed/*
+!data/processed/README.md
+report/models/*.rds
+*.csv
+*.png
